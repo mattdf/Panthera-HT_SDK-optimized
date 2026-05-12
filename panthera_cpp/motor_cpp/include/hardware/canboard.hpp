@@ -2,6 +2,7 @@
 #define _CANBOARD_H_
 #include <iostream>
 #include <vector>
+#include <memory>
 #include "canport.hpp"
 #include "parse_robot_params.hpp"
 
@@ -10,11 +11,16 @@ class canboard
 {
 private:
     int CANport_num;
+    std::vector<std::unique_ptr<canport>> owned_CANport_;
     std::vector<canport*> CANport;
 
 public:
     canboard(int _CANboard_ID, std::vector<serial_driver *> *ser, CANBoardParams &canboard_params, bool _canport_error_output_flag);
-    ~canboard() {}
+    ~canboard() = default;
+    canboard(const canboard &) = delete;
+    canboard &operator=(const canboard &) = delete;
+    canboard(canboard &&) noexcept = default;
+    canboard &operator=(canboard &&) noexcept = default;
 
     std::vector<canport*>& get_CANport();
     int get_CANport_num();

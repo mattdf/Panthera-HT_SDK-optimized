@@ -21,6 +21,35 @@
 namespace panthera
 {
 
+struct JointCommand
+{
+    std::vector<double> position;
+    std::vector<double> velocity;
+    std::vector<double> max_torque;
+};
+
+struct JointMitCommand
+{
+    std::vector<double> position;
+    std::vector<double> velocity;
+    std::vector<double> torque;
+    std::vector<double> kp;
+    std::vector<double> kd;
+};
+
+struct JointTrajectoryPoint
+{
+    std::vector<double> position;
+    std::vector<double> velocity;
+    double time_from_start{0.0};
+};
+
+struct CartesianPose
+{
+    Eigen::Vector3d position{Eigen::Vector3d::Zero()};
+    Eigen::Matrix3d rotation{Eigen::Matrix3d::Identity()};
+};
+
 /**
  * @brief Panthera 机械臂控制类
  *
@@ -119,6 +148,11 @@ public:
                          double tolerance = 0.1,
                          double timeout = 15.0);
 
+    bool posVelMaxTorque(const JointCommand& command,
+                         bool is_wait = false,
+                         double tolerance = 0.1,
+                         double timeout = 15.0);
+
     /**
      * @brief 关节五参数MIT模式控制（位置、速度、力矩、Kp、Kd）
      * @param pos 目标位置数组 (rad)
@@ -133,6 +167,8 @@ public:
                           const std::vector<double>& torque,
                           const std::vector<double>& kp,
                           const std::vector<double>& kd);
+
+    bool posVelTorqueKpKd(const JointMitCommand& command);
 
     /**
      * @brief 关节速度控制

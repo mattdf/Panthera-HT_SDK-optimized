@@ -1,5 +1,4 @@
 import time
-import sys
 import os
 import yaml
 import numpy as np
@@ -7,13 +6,15 @@ import pinocchio as pin
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import CubicSpline
 
+from .types import JointTrajectory, ManipulationPlan, RobotState
+from .pipeline import cartesian_waypoints_to_dicts
+
 try:
     import hightorque_robot as htr
 except ImportError as e:
-    print(f"导入hightorque_robot失败: {e}")
-    print("请确保已安装hightorque_robot whl包")
-    print("安装方法: pip install hightorque_robot-*.whl")
-    sys.exit(1)
+    raise ImportError(
+        "导入hightorque_robot失败。请确保已安装 hightorque_robot wheel 包。"
+    ) from e
 
 #######################
 # Panthera 机械臂控制类
@@ -84,8 +85,7 @@ class Panthera(htr.Robot):  # 继承自htr.Robot
                 self.config = yaml.safe_load(f)
                 print(f"配置文件加载成功: {config_path}")
         except Exception as e:
-            print(f"配置文件加载失败: {e}")
-            sys.exit(1)
+            raise RuntimeError(f"配置文件加载失败: {e}") from e
 
     def _load_joint_limits(self):
         """从配置文件加载关节限位"""
@@ -137,61 +137,51 @@ class Panthera(htr.Robot):  # 继承自htr.Robot
         """从配置文件加载电机相关参数（最大力矩、速度限幅、加速度限制）"""
         # 加载最大力矩
         if 'robot' not in self.config or 'max_torque' not in self.config['robot']:
-            print("错误: 配置文件中缺少 robot.max_torque 参数")
-            sys.exit(1)
+            raise KeyError("配置文件中缺少 robot.max_torque 参数")
 
         self.max_torque = np.array(self.config['robot']['max_torque'])
         if len(self.max_torque) != self.motor_count:
-            print(f"错误: max_torque 长度 ({len(self.max_torque)}) 与电机数量 ({self.motor_count}) 不匹配")
-            sys.exit(1)
+            raise ValueError(f"max_torque 长度 ({len(self.max_torque)}) 与电机数量 ({self.motor_count}) 不匹配")
         print(f"最大力矩加载成功: {self.max_torque.tolist()}")
 
         # 加载速度限幅
         if 'robot' not in self.config or 'velocity_limits' not in self.config['robot']:
-            print("错误: 配置文件中缺少 robot.velocity_limits 参数")
-            sys.exit(1)
+            raise KeyError("配置文件中缺少 robot.velocity_limits 参数")
 
         self.velocity_limits = np.array(self.config['robot']['velocity_limits'])
         if len(self.velocity_limits) != self.motor_count:
-            print(f"错误: velocity_limits 长度 ({len(self.velocity_limits)}) 与电机数量 ({self.motor_count}) 不匹配")
-            sys.exit(1)
+            raise ValueError(f"velocity_limits 长度 ({len(self.velocity_limits)}) 与电机数量 ({self.motor_count}) 不匹配")
         print(f"速度限幅加载成功: {self.velocity_limits.tolist()}")
 
         # 加载加速度限制
         if 'robot' not in self.config or 'acceleration_limits' not in self.config['robot']:
-            print("错误: 配置文件中缺少 robot.acceleration_limits 参数")
-            sys.exit(1)
+            raise KeyError("配置文件中缺少 robot.acceleration_limits 参数")
 
         self.acceleration_limits = np.array(self.config['robot']['acceleration_limits'])
         if len(self.acceleration_limits) != self.motor_count:
-            print(f"错误: acceleration_limits 长度 ({len(self.acceleration_limits)}) 与电机数量 ({self.motor_count}) 不匹配")
-            sys.exit(1)
+            raise ValueError(f"acceleration_limits 长度 ({len(self.acceleration_limits)}) 与电机数量 ({self.motor_count}) 不匹配")
         print(f"加速度限制加载成功: {self.acceleration_limits.tolist()}")
 
     def _load_moveit_parameters(self):
         """从配置文件加载 MoveIt 笛卡尔控制器参数"""
         if 'moveit_cartesian' not in self.config:
-            print("错误: 配置文件中缺少 moveit_cartesian 参数")
-            sys.exit(1)
+            raise KeyError("配置文件中缺少 moveit_cartesian 参数")
 
         moveit_config = self.config['moveit_cartesian']
 
         # 加载 eef_step
         if 'eef_step' not in moveit_config:
-            print("错误: 配置文件中缺少 moveit_cartesian.eef_step 参数")
-            sys.exit(1)
+            raise KeyError("配置文件中缺少 moveit_cartesian.eef_step 参数")
         self.eef_step = moveit_config['eef_step']
 
         # 加载 jump_threshold
         if 'jump_threshold' not in moveit_config:
-            print("错误: 配置文件中缺少 moveit_cartesian.jump_threshold 参数")
-            sys.exit(1)
+            raise KeyError("配置文件中缺少 moveit_cartesian.jump_threshold 参数")
         self.jump_threshold = moveit_config['jump_threshold']
 
         # 加载 resample_dt
         if 'resample_dt' not in moveit_config:
-            print("错误: 配置文件中缺少 moveit_cartesian.resample_dt 参数")
-            sys.exit(1)
+            raise KeyError("配置文件中缺少 moveit_cartesian.resample_dt 参数")
         self.resample_dt = moveit_config['resample_dt']
 
         print(f"MoveIt笛卡尔参数加载成功: eef_step={self.eef_step}m, "
@@ -290,6 +280,101 @@ class Panthera(htr.Robot):  # 继承自htr.Robot
         """获取当前夹爪力矩"""
         state = self.Motors[self.gripper_id-1].get_current_motor_state()
         return state.torque
+
+    #######################
+    # Stable integration API
+    #######################
+    def get_state(self):
+        """Return a typed state object for planners and policy stacks."""
+        return RobotState(
+            joint_position=self.get_current_pos(),
+            joint_velocity=self.get_current_vel(),
+            joint_torque=self.get_current_torque(),
+            gripper_position=self.get_current_pos_gripper(),
+            gripper_velocity=self.get_current_vel_gripper(),
+            gripper_torque=self.get_current_torque_gripper(),
+        )
+
+    def fk(self, joint_angles=None):
+        """Stable alias for forward_kinematics()."""
+        return self.forward_kinematics(joint_angles)
+
+    def ik(self, target_position, target_rotation=None, init_q=None, **kwargs):
+        """Stable alias for inverse_kinematics()."""
+        return self.inverse_kinematics(target_position, target_rotation, init_q, **kwargs)
+
+    def plan_cartesian(self, waypoints, duration=None, smooth=True):
+        """
+        Plan a Cartesian path and return a typed ManipulationPlan.
+        Waypoints use {'position': [x, y, z], 'rotation': 3x3_R}.
+        """
+        waypoints = cartesian_waypoints_to_dicts(waypoints)
+        joint_trajectory, fraction = self.compute_cartesian_path(waypoints)
+        if joint_trajectory is None or len(joint_trajectory) == 0:
+            return ManipulationPlan(
+                joint_trajectory=JointTrajectory(
+                    positions=np.empty((0, self.motor_count)),
+                    timestamps=np.empty((0,)),
+                    velocities=np.empty((0, self.motor_count)),
+                ),
+                cartesian_fraction=fraction,
+            )
+
+        timestamps = np.asarray(self.compute_time_parameterization(joint_trajectory, duration), dtype=float)
+        positions = np.asarray(joint_trajectory, dtype=float)
+
+        if smooth and len(positions) >= 2:
+            positions, timestamps, velocities = self.smooth_trajectory_spline(positions, timestamps)
+            positions = np.asarray(positions, dtype=float)
+            timestamps = np.asarray(timestamps, dtype=float)
+            velocities = np.asarray(velocities, dtype=float)
+        else:
+            velocities = np.zeros_like(positions)
+            if len(positions) >= 2:
+                dt = np.diff(timestamps)
+                dq = np.diff(positions, axis=0)
+                velocities[1:] = dq / dt[:, None]
+
+        return ManipulationPlan(
+            joint_trajectory=JointTrajectory(positions=positions, timestamps=timestamps, velocities=velocities),
+            cartesian_fraction=fraction,
+        )
+
+    def execute_trajectory(self, trajectory, max_torque=None):
+        """Execute a JointTrajectory/ManipulationPlan or a compatible dict."""
+        if isinstance(trajectory, ManipulationPlan):
+            trajectory = trajectory.joint_trajectory
+        if isinstance(trajectory, JointTrajectory):
+            return self._execute_trajectory(trajectory.positions, trajectory.timestamps, trajectory.velocities, max_torque)
+        return self._execute_trajectory(
+            trajectory["positions"],
+            trajectory["timestamps"],
+            trajectory["velocities"],
+            max_torque,
+        )
+
+    def open_gripper(self, pos=1.6, vel=0.5, max_torque=0.5):
+        """Stable alias for gripper_open()."""
+        return self.gripper_open(pos=pos, vel=vel, max_tqu=max_torque)
+
+    def close_gripper(self, pos=0.0, vel=0.5, max_torque=0.5):
+        """Stable alias for gripper_close()."""
+        return self.gripper_close(pos=pos, vel=vel, max_tqu=max_torque)
+
+    def set_camera_to_robot_transform(self, transform):
+        """Set a 4x4 homogeneous transform mapping camera-frame points into robot base frame."""
+        transform = np.asarray(transform, dtype=float)
+        if transform.shape != (4, 4):
+            raise ValueError("camera_to_robot transform must be a 4x4 matrix")
+        self.camera_to_robot = transform
+
+    def camera_point_to_robot(self, point):
+        """Transform a 3D camera-frame point into robot base frame."""
+        if not hasattr(self, "camera_to_robot"):
+            raise RuntimeError("camera_to_robot transform has not been set")
+        point_h = np.ones(4)
+        point_h[:3] = np.asarray(point, dtype=float)
+        return (self.camera_to_robot @ point_h)[:3]
 
     #######################
     # 基础运动控制

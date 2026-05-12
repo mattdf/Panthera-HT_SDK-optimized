@@ -2,11 +2,13 @@
 
 
 canboard::canboard(int _CANboard_ID, std::vector<serial_driver *> *ser, CANBoardParams &canboard_params, bool _canport_error_output_flag)
-{   
+{
+    CANport_num = canboard_params.CANport_num;
     auto it = canboard_params.CANports.begin();
     for (size_t j = 1; j <= canboard_params.CANport_num; j++, it++) // 一个串口对应一个CANport
     {
-        CANport.push_back(new canport(j, _CANboard_ID, (*ser)[(_CANboard_ID - 1) * CANport_num + j - 1], it->second, _canport_error_output_flag));
+        owned_CANport_.push_back(std::make_unique<canport>(j, _CANboard_ID, (*ser)[(_CANboard_ID - 1) * CANport_num + j - 1], it->second, _canport_error_output_flag));
+        CANport.push_back(owned_CANport_.back().get());
     }
 }
 

@@ -9,6 +9,7 @@ set(VERSION_MAJOR 4)
 set(VERSION_MINOR 4)
 set(VERSION_PATCH 7)
 set(PROJECT_VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH})
+option(BUILD_EXAMPLES "Build hightorque_motor example executables" ON)
 
 add_subdirectory(third_part/lcm)
 add_subdirectory(third_part/serial_cmake)
@@ -41,6 +42,7 @@ set(motor_SRCS
 )
 
 add_library(hightorque_motor SHARED ${motor_SRCS})
+add_library(hightorque_motor::hightorque_motor ALIAS hightorque_motor)
 
 target_include_directories(hightorque_motor PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -68,7 +70,9 @@ target_link_libraries(hightorque_motor
 set_target_properties(hightorque_motor PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${VERSION_MAJOR}
-    PUBLIC_HEADER "include/hardware/robot.hpp;include/hardware/motor.hpp;include/hardware/canport.hpp;include/hardware/canboard.hpp;include/parse_robot_params.hpp;include/serial_struct.hpp;include/serial_driver.hpp;include/crc/crc8.hpp;include/crc/crc16.hpp;msg/motor_msg/motor_msg.hpp"
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN"
+    PUBLIC_HEADER "include/hardware/robot.hpp;include/hardware/motor.hpp;include/hardware/canport.hpp;include/hardware/canboard.hpp;include/parse_robot_params.hpp;include/serial_struct.hpp;include/serial_driver.hpp;include/hightorque_logger.hpp;include/crc/crc8.hpp;include/crc/crc16.hpp;msg/motor_msg/motor_msg.hpp"
 )
 
 # ==================== 安装配置 ====================
@@ -97,7 +101,7 @@ install(EXPORT hightorque_motorTargets
 # CMake 配置文件
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/hightorque_robotConfig.cmake.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/hightorque_motorConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/hightorque_motorConfig.cmake
     INSTALL_DESTINATION lib/cmake/hightorque_motor
 )
@@ -114,25 +118,27 @@ install(FILES
     DESTINATION lib/cmake/hightorque_motor
 )
 
-# ==================== 电机控制示例程序 ====================
+if(BUILD_EXAMPLES)
+    # ==================== 电机控制示例程序 ====================
 
-add_executable(canboard_update example/canboard_update.cpp)
-target_link_libraries(canboard_update hightorque_motor)
+    add_executable(canboard_update example/canboard_update.cpp)
+    target_link_libraries(canboard_update hightorque_motor)
 
-add_executable(motor_feedack example/motor_feedack.cpp)
-target_link_libraries(motor_feedack hightorque_motor)
+    add_executable(motor_feedack example/motor_feedack.cpp)
+    target_link_libraries(motor_feedack hightorque_motor)
 
-add_executable(motor_move_zero example/motor_move_zero.cpp)
-target_link_libraries(motor_move_zero hightorque_motor)
+    add_executable(motor_move_zero example/motor_move_zero.cpp)
+    target_link_libraries(motor_move_zero hightorque_motor)
 
-add_executable(motor_run example/motor_run.cpp)
-target_link_libraries(motor_run hightorque_motor)
+    add_executable(motor_run example/motor_run.cpp)
+    target_link_libraries(motor_run hightorque_motor)
 
-add_executable(motor_msg_subscriber example/motor_msg_subscriber.cpp)
-target_link_libraries(motor_msg_subscriber hightorque_motor)
+    add_executable(motor_msg_subscriber example/motor_msg_subscriber.cpp)
+    target_link_libraries(motor_msg_subscriber hightorque_motor)
 
-add_executable(motor_set_zero example/motor_set_zero.cpp)
-target_link_libraries(motor_set_zero hightorque_motor)
+    add_executable(motor_set_zero example/motor_set_zero.cpp)
+    target_link_libraries(motor_set_zero hightorque_motor)
 
-add_executable(parse_demo example/parse_demo.cpp)
-target_link_libraries(parse_demo hightorque_motor)
+    add_executable(parse_demo example/parse_demo.cpp)
+    target_link_libraries(parse_demo hightorque_motor)
+endif()

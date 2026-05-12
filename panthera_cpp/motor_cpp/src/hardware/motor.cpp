@@ -1,6 +1,6 @@
 #include "motor.hpp"
 #include <iostream>
-
+#include <stdexcept>
 
 
 
@@ -82,9 +82,7 @@ inline int16_t motor::tqe_float2int(float in_data, motor_type motor_type)
     auto it = motor_tqe_adj.find(motor_type);
     if (it == motor_tqe_adj.end())
     {
-        ROS_ERROR("Motor Type SettingMotor type setting error");
-        exit(0);
-        return int16_t();
+        throw std::runtime_error("Motor torque conversion failed: unsupported motor type");
     }
 
     return int16_limit(in_data / (it->second * 0.01f));
@@ -96,9 +94,7 @@ inline float motor::tqe_int2float(int16_t in_data, motor_type motor_type)
     auto it = motor_tqe_adj.find(motor_type);
     if (it == motor_tqe_adj.end())
     {
-        ROS_ERROR("Motor Type SettingMotor type setting error");
-        exit(0);
-        return int16_t();
+        throw std::runtime_error("Motor torque conversion failed: unsupported motor type");
     }
 
     return (in_data * (it->second * 0.01f));
@@ -110,9 +106,7 @@ inline float motor::pid_scale(float in_data, motor_type motor_type)
     auto it = motor_tqe_adj.find(motor_type);
     if (it == motor_tqe_adj.end())
     {
-        ROS_ERROR("Motor Type SettingMotor type setting error");
-        exit(0);
-        return int16_t();
+        throw std::runtime_error("Motor PID scaling failed: unsupported motor type");
     }
 
     return (in_data / it->second);
@@ -246,8 +240,7 @@ uint16_t motor::get_data_len(uint8_t mode, uint16_t num)
             break;
         default:
             motor_one_len = 0;
-            ROS_ERROR("This mode has beenThis mode is deprecated.");
-            exit(0);
+            throw std::invalid_argument("Unsupported or deprecated motor command mode: " + std::to_string(mode));
     }
 
     uint8_t fdcan_one_len = 60;
@@ -590,17 +583,18 @@ void motor::set_motor_type(std::string type_str)
     {
         type_ = motor_type2.at(type_str);
     } 
-    catch (const std::out_of_range& e) 
+    catch (const std::out_of_range& e)
     {
-        ROS_ERROR("Motor model error: %s", type_str.c_str());
-
-        std::cout << "----------------Supported motor models are:-------------------" << std::endl;
+        std::string supported;
         for (auto it = motor_type2.begin(); it != motor_type2.end(); ++it)
         {
-            std::cout << it->first << std::endl;
+            if (!supported.empty())
+            {
+                supported += ", ";
+            }
+            supported += it->first;
         }
-        std::cout << "--------------------------------------------------------------" << std::endl;
-        exit(-1); 
+        throw std::invalid_argument("Unsupported motor model '" + type_str + "'. Supported models: " + supported);
     }
 }
 

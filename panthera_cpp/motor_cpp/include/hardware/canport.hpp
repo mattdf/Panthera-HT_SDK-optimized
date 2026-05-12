@@ -6,6 +6,7 @@
 #include "serial_driver.hpp"
 #include <unordered_set>
 #include <iostream>
+#include <memory>
 #include "parse_robot_params.hpp"
 
 
@@ -15,6 +16,7 @@ class canport
 {
 private:
     int motor_num;
+    std::vector<std::unique_ptr<motor>> owned_motors_;
     std::vector<motor *> Motors;
     std::map<int, motor *> Map_Motors_p;
     int canboard_id, canport_id;

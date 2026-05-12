@@ -3,9 +3,10 @@
 #include <stdint.h>
 #include "crc16.hpp"
 #include "crc8.hpp"
+#include "hightorque_logger.hpp"
 
-#define ROS_INFO(format, ...)  printf(format "\n", ##__VA_ARGS__)
-#define ROS_ERROR(format, ...) printf("\033[1;31m" format "\033[0m\n", ##__VA_ARGS__)
+#define ROS_INFO(format, ...)  HT_LOG_INFO(format, ##__VA_ARGS__)
+#define ROS_ERROR(format, ...) HT_LOG_ERROR(format, ##__VA_ARGS__)
 #define ROS_DEBUG_STREAM(x)
 
 

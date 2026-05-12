@@ -379,6 +379,15 @@ bool Panthera::posVelMaxTorque(const std::vector<double>& pos,
     return true;
 }
 
+bool Panthera::posVelMaxTorque(const JointCommand& command,
+                               bool is_wait,
+                               double tolerance,
+                               double timeout)
+{
+    return posVelMaxTorque(command.position, command.velocity, command.max_torque,
+                           is_wait, tolerance, timeout);
+}
+
 bool Panthera::jointVel(const std::vector<double>& vel)
 {
     // 参数检查
@@ -511,6 +520,12 @@ bool Panthera::posVelTorqueKpKd(const std::vector<double>& pos,
     motor_send_cmd();
 
     return true;
+}
+
+bool Panthera::posVelTorqueKpKd(const JointMitCommand& command)
+{
+    return posVelTorqueKpKd(command.position, command.velocity, command.torque,
+                            command.kp, command.kd);
 }
 
 // ==================== 夹爪控制接口 ====================

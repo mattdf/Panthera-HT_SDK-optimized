@@ -8,6 +8,8 @@
 #include <libserialport.h>
 #include <dirent.h>
 #include <algorithm>
+#include <atomic>
+#include <memory>
 #include <lcm/lcm-cpp.hpp>
 
 namespace hightorque_robot
@@ -22,15 +24,16 @@ namespace hightorque_robot
         std::string SDK_version2 = "4.6.0"; // SDK版本
         std::condition_variable error_check_cv;
         std::mutex error_check_mutex;
-        bool error_check_flag = false;
+        std::atomic_bool error_check_flag{false};
         std::thread error_check_thread_;
         std::thread pub_thread_;
         fun_version fun_v = fun_v1;
         uint16_t slave_v = COMBINE_VERSION(3, 0, 0);
         std::shared_ptr<lcm::LCM> lcm_ptr;
-        bool lcm_en;
+        std::atomic_bool lcm_en{false};
         bool canport_error_output_flag = false;
         bool board_special_flag = false;
+        std::vector<std::unique_ptr<serial_driver>> owned_ser_;
     public:
         std::vector<serial_driver *> ser;
         std::vector<motor *> Motors;

@@ -5,6 +5,7 @@
 #include <yaml-cpp/yaml.h>
 #include <iostream>
 #include <iomanip>
+#include <stdexcept>
 
 namespace hightorque_robot
 {
@@ -48,8 +49,7 @@ namespace hightorque_robot
 
         if (motor_timeout_ms < 0 || motor_timeout_ms > 32760)
         {
-            ROS_ERROR("The value of motor_timeout_ms is out of the valid range [0, 32760]");
-            exit(-1);
+            throw std::out_of_range("motor_timeout_ms is out of the valid range [0, 32760]");
         }
         
         std::cout << "\033[1;32mGot params SDK_version: v" << SDK_version2 << "\033[0m" << std::endl;
@@ -126,11 +126,8 @@ namespace hightorque_robot
 
         for (serial_driver *s : ser)
         {
-            if (s) 
-            {
-                s->set_run_flag(false);
-                s->close();
-            }
+            s->set_run_flag(false);
+            s->close();
         }
 
         for (auto &thread : ser_recv_threads)
@@ -146,9 +143,10 @@ namespace hightorque_robot
         }
 
         error_check_flag = false;
+        error_check_cv.notify_all();
         if(error_check_thread_.joinable())
         {
-            error_check_thread_.join(); 
+            error_check_thread_.join();
         }
     }
 
@@ -387,6 +385,7 @@ namespace hightorque_robot
     void robot::init_ser()
     {
         ser.clear();
+        owned_ser_.clear();
         ser_recv_threads.clear();
         str.clear();   
         std::vector<std::string> ports = list_serial_ports(Serial_Type);
@@ -412,7 +411,8 @@ namespace hightorque_robot
 
                 serial_id_old.push_back(serial_id);
 
-                serial_driver *s = new serial_driver(&str[serial_id - 1], Seial_baudrate, canport_error_output_flag);
+                owned_ser_.push_back(std::make_unique<serial_driver>(&str[serial_id - 1], Seial_baudrate, canport_error_output_flag));
+                serial_driver *s = owned_ser_.back().get();
                 ser.push_back(s);
                 ser_recv_threads.push_back(std::thread(&serial_driver::recv_1for6_42, s));
             }
@@ -474,12 +474,8 @@ namespace hightorque_robot
                     CANPorts.clear();
                     Motors.clear();
         
-                    for (serial_driver *s : ser)
-                    {
-                        delete s;
-                    }
-
                     ser.clear();
+                    owned_ser_.clear();
                     error_run_state = error_wait_dev;
                     std::cerr << "\033[1;31mclear obj and thread\033[0m" << std::endl;
                 }
@@ -611,8 +607,7 @@ namespace hightorque_robot
     {
         if (slave_v < COMBINE_VERSION(4, 0, 0))
         {
-            std::cerr << "\033[1;31m << The current communication board does not support this function!!! << \033[0m" << std::endl;
-            exit(0);
+            throw std::runtime_error("The current communication board does not support motor version queries");
         }
 
         for (canboard &cb : CANboards)

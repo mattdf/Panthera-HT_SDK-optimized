@@ -1,4 +1,5 @@
 #include <iostream>
+#include <stdexcept>
 #include "parse_robot_params.hpp"
 
 
@@ -78,14 +79,12 @@ void readConfigParam(const YAML::Node &node, const std::string &key, T &value)
         }
         catch (const YAML::BadConversion &e)
         {
-            std::cerr << "\033[1;31m" << "Error: Failed to convert '" << key << "' to the required type: " << e.what() << "\033[0m" << std::endl;
-            exit(-1);
+            throw std::runtime_error("Failed to convert '" + key + "' to the required type: " + e.what());
         }
     }
     else
     {
-        std::cerr << "\033[1;31m" << "Error: '" << key << "' is missing in configuration file." << "\033[0m" << std::endl;
-        exit(-1);
+        throw std::runtime_error("'" + key + "' is missing in configuration file.");
     }
 }
 
@@ -102,8 +101,7 @@ void readConfigParam(const YAML::Node &node, const std::string &key, T &value, T
         }
         catch (const YAML::BadConversion &e)
         {
-            std::cerr << "\033[1;31m" << "Error: Failed to convert '" << key << "' to the required type: " << e.what() << "\033[0m" << std::endl;
-            exit(-1);
+            throw std::runtime_error("Failed to convert '" + key + "' to the required type: " + e.what());
         }
     }
     else

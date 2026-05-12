@@ -1,6 +1,7 @@
 #include "canport.hpp"
 #include <chrono>
 #include <thread>
+#include <stdexcept>
 
 
 canport::canport(int _CANport_num, int _CANboard_num, serial_driver *_ser, CANPortParams &canport_params, bool _canport_error_output_flag) : ser(_ser)
@@ -12,9 +13,9 @@ canport::canport(int _CANport_num, int _CANboard_num, serial_driver *_ser, CANPo
 
     if (PORT_MOTOR_NUM_MAX < motor_num)
     {
-        std::cerr << "\033[1;31m" << "Too many motors, Supports up to " << PORT_MOTOR_NUM_MAX << " motors, but there are actually " << motor_num << " motors" << "\033[0m" << std::endl;
-        exit(-1);
-    }        
+        throw std::runtime_error("Too many motors on CAN port: supports up to " + std::to_string(PORT_MOTOR_NUM_MAX) +
+                                 ", got " + std::to_string(motor_num));
+    }
 
     for(auto motor_params : canport_params.motors)
     {
@@ -27,7 +28,8 @@ canport::canport(int _CANport_num, int _CANboard_num, serial_driver *_ser, CANPo
     auto it = canport_params.motors.begin();
     for (size_t i = 1; i <= motor_num; i++, it++)
     {
-        Motors.push_back(new motor(i, _CANport_num, _CANboard_num, &cdc_tr_message, id_max, it->second));
+        owned_motors_.push_back(std::make_unique<motor>(i, _CANport_num, _CANboard_num, &cdc_tr_message, id_max, it->second));
+        Motors.push_back(owned_motors_.back().get());
     }
     for (motor *m : Motors)
     {
@@ -272,10 +274,9 @@ void canport::set_conf_write()
     {
         std::cout << "\033[1;32mSettings saved successfully.\033[0m" << std::endl;
     }
-    else 
+    else
     {
         std::cerr << "\033[1;31m" << "Failed to save settings." << "\033[0m" << std::endl;
-        exit(0);
     }
 }
 

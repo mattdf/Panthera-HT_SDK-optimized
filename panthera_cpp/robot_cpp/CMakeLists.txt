@@ -4,6 +4,8 @@ project(panthera_robot)
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+option(BUILD_EXAMPLES "Build panthera_robot example executables" ON)
+include(CTest)
 
 # ==================== 查找依赖 ====================
 
@@ -20,6 +22,7 @@ else()
 endif()
 
 # 查找其他依赖库
+find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(yaml-cpp REQUIRED)
 
 # 查找 Pinocchio 库（用于重力补偿等动力学计算）- 必需依赖
@@ -46,7 +49,8 @@ target_include_directories(panthera_robot PUBLIC
 # 链接库
 target_link_libraries(panthera_robot
     PUBLIC
-        hightorque_motor
+        hightorque_motor::hightorque_motor
+        Eigen3::Eigen
         yaml-cpp
         pinocchio::pinocchio
 )
@@ -82,6 +86,12 @@ install(EXPORT panthera_robotTargets
 # CMake 配置文件
 include(CMakePackageConfigHelpers)
 
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/panthera_robotConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/panthera_robotConfig.cmake
+    INSTALL_DESTINATION lib/cmake/panthera_robot
+)
+
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/panthera_robotConfigVersion.cmake
     VERSION 1.0.0
@@ -89,6 +99,7 @@ write_basic_package_version_file(
 )
 
 install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/panthera_robotConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/panthera_robotConfigVersion.cmake
     DESTINATION lib/cmake/panthera_robot
 )
@@ -96,7 +107,7 @@ install(FILES
 # 安装配置文件和URDF
 install(DIRECTORY robot_param/ DESTINATION share/panthera_robot/robot_param
     FILES_MATCHING PATTERN "*.yaml")
-install(DIRECTORY urdf/ DESTINATION share/panthera_robot/urdf
+install(DIRECTORY Panthera-HT_description/urdf/ DESTINATION share/panthera_robot/urdf
     FILES_MATCHING PATTERN "*.urdf")
 
 # ==================== 机械臂控制示例程序 ====================
@@ -126,18 +137,28 @@ set(EXAMPLES
     5_teleop_control
 )
 
-# 为每个示例创建可执行文件
-foreach(EXAMPLE ${EXAMPLES})
-    add_executable(${EXAMPLE} example/${EXAMPLE}.cpp)
+if(BUILD_EXAMPLES)
+    # 为每个示例创建可执行文件
+    foreach(EXAMPLE ${EXAMPLES})
+        add_executable(${EXAMPLE} example/${EXAMPLE}.cpp)
 
-    # 链接库
-    target_link_libraries(${EXAMPLE}
-        panthera_robot
-    )
-endforeach()
+        # 链接库
+        target_link_libraries(${EXAMPLE}
+            panthera_robot
+        )
+    endforeach()
+endif()
+
+if(BUILD_TESTING)
+    add_executable(panthera_api_surface_test tests/test_api_surface.cpp)
+    target_link_libraries(panthera_api_surface_test PRIVATE panthera_robot)
+    add_test(NAME panthera_api_surface_test COMMAND panthera_api_surface_test)
+endif()
 
 # 打印信息
 message(STATUS "Building Panthera Robot SDK")
 message(STATUS "Motor SDK path: ${MOTOR_CPP_DIR}")
-message(STATUS "Pinocchio found - building all examples with gravity compensation")
-message(STATUS "Total examples: ${EXAMPLES}")
+if(BUILD_EXAMPLES)
+    message(STATUS "Pinocchio found - building all examples with gravity compensation")
+    message(STATUS "Total examples: ${EXAMPLES}")
+endif()

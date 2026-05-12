@@ -24,12 +24,37 @@ Panthera-HT 机械臂控制库
 __version__ = "1.0.0"
 __author__ = "HighTorque Robotics"
 
-# 导入主要类
-from .Panthera import Panthera
-from .recorder import Recorder as TrajectoryRecorder
+from .sim import SimPanthera
+from .types import (
+    CartesianWaypoint,
+    GraspCandidate,
+    JointTrajectory,
+    ManipulationPlan,
+    ObjectPose,
+    RobotState,
+    grasp_to_waypoints,
+)
+
+
+def __getattr__(name):
+    if name == "Panthera":
+        from .Panthera import Panthera
+        return Panthera
+    if name == "TrajectoryRecorder":
+        from .recorder import Recorder
+        return Recorder
+    raise AttributeError(name)
 
 # 导出公共API
 __all__ = [
     'Panthera',
+    'JointTrajectory',
+    'ManipulationPlan',
+    'RobotState',
+    'ObjectPose',
+    'GraspCandidate',
+    'CartesianWaypoint',
+    'grasp_to_waypoints',
+    'SimPanthera',
     'TrajectoryRecorder',
 ]

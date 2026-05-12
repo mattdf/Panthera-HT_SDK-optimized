@@ -25,7 +25,7 @@ class CMakeBuild(build_ext):
 
         cmake_args = [
             f'-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}',
-            f'-DPYTHON_EXECUTABLE={sys.executable}',
+            f'-DPython3_EXECUTABLE={sys.executable}',
         ]
 
         cfg = 'Debug' if self.debug else 'Release'
@@ -50,13 +50,17 @@ setup(
     description="高扭矩机器人电机控制Python接口",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=find_packages(),
+    packages=find_packages() + find_packages(where="scripts"),
+    package_dir={"Panthera_lib": "scripts/Panthera_lib"},
+    package_data={"hightorque_robot": ["*.so", "*.so.*"]},
+    include_package_data=True,
     ext_modules=[CMakeExtension('hightorque_robot._hightorque_robot')],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
     python_requires='>=3.6',
     install_requires=[
-        'numpy>=1.19.0,<2.0',
+        'numpy>=1.26.0,<3.0',
+        'PyYAML>=6.0,<7.0',
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
