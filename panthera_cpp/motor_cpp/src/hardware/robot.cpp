@@ -58,8 +58,6 @@ namespace hightorque_robot
         std::cout << "\033[1;32mThe Serial type is " << Serial_Type << "\033[0m" << std::endl;
 
         init_ser();
-        error_check_flag = true;
-        error_check_thread_ = std::thread(&robot::check_error, this);
         auto it = robot_params.CANboards.begin();
         for (size_t i = 1; i <= CANboard_num; i++, it++)
         {
@@ -74,6 +72,9 @@ namespace hightorque_robot
         {
             cp->puch_motor(&Motors);
         }
+        start_serial_receive_threads();
+        error_check_flag = true;
+        error_check_thread_ = std::thread(&robot::check_error, this);
         set_port_motor_num(); // 设置通道上挂载的电机数，并获取主控板固件版本号
         if (slave_v >= COMBINE_VERSION(4, 1, 0))
         {
@@ -261,13 +262,19 @@ namespace hightorque_robot
     int robot::serial_pid_vid(const char *name, int *pid, int *vid)
     {
         int r = 0;
-        struct sp_port *port;
+        struct sp_port *port = nullptr;
         try
         {
-            /* code */
-            sp_get_port_by_name(name, &port);
-            sp_open(port, SP_MODE_READ);
-            if (sp_get_port_usb_vid_pid(port, vid, pid) != SP_OK) 
+            if (sp_get_port_by_name(name, &port) != SP_OK || port == nullptr)
+            {
+                return -3;
+            }
+            if (sp_open(port, SP_MODE_READ) != SP_OK)
+            {
+                sp_free_port(port);
+                return -3;
+            }
+            if (sp_get_port_usb_vid_pid(port, vid, pid) != SP_OK)
             {
                 r = 1;
             } 
@@ -280,8 +287,11 @@ namespace hightorque_robot
         catch(const std::exception& e)
         {
             std::cerr << "\033[1;31m" << e.what() << "\033[0m" << '\n';
-            sp_close(port);
-            sp_free_port(port);
+            if (port != nullptr)
+            {
+                sp_close(port);
+                sp_free_port(port);
+            }
         }
         return r;
     }
@@ -291,11 +301,14 @@ namespace hightorque_robot
     {
         int pid, vid;
         int r = 0;
-        struct sp_port *port;
+        struct sp_port *port = nullptr;
         try
         {
-            sp_get_port_by_name(name, &port);
-            if (sp_get_port_usb_vid_pid(port, &vid, &pid) != SP_OK) 
+            if (sp_get_port_by_name(name, &port) != SP_OK || port == nullptr)
+            {
+                return -3;
+            }
+            if (sp_get_port_usb_vid_pid(port, &vid, &pid) != SP_OK)
             {
                 r = -1;
             } 
@@ -342,8 +355,11 @@ namespace hightorque_robot
         {
             std::cerr << e.what() << '\n';
             r = -3;
-            sp_close(port);
-            sp_free_port(port);
+            if (port != nullptr)
+            {
+                sp_close(port);
+                sp_free_port(port);
+            }
         }
 
         return r;
@@ -410,10 +426,40 @@ namespace hightorque_robot
                 int serial_id = port_params.second.serial_id;
 
                 serial_id_old.push_back(serial_id);
+                if (serial_id <= 0 || static_cast<size_t>(serial_id) > str.size())
+                {
+                    throw std::runtime_error("Configured serial_id " + std::to_string(serial_id) +
+                                             " has no matching HighTorque serial port; found " +
+                                             std::to_string(str.size()) + " candidate port(s)");
+                }
 
                 owned_ser_.push_back(std::make_unique<serial_driver>(&str[serial_id - 1], Seial_baudrate, canport_error_output_flag));
                 serial_driver *s = owned_ser_.back().get();
                 ser.push_back(s);
+                if (!s->is_open())
+                {
+                    throw std::runtime_error("Failed to open configured serial port " + str[serial_id - 1]);
+                }
+            }
+        }
+    }
+
+    void robot::start_serial_receive_threads()
+    {
+        for (auto &_thread : ser_recv_threads)
+        {
+            if (_thread.joinable())
+            {
+                _thread.join();
+            }
+        }
+        ser_recv_threads.clear();
+
+        for (serial_driver *s : ser)
+        {
+            if (s != nullptr && s->is_open())
+            {
+                s->set_run_flag(true);
                 ser_recv_threads.push_back(std::thread(&serial_driver::recv_1for6_42, s));
             }
         }
@@ -499,26 +545,35 @@ namespace hightorque_robot
                 case error_reconnect:
                 {
                     std::cerr << "\033[1;31mreconnect start \033[0m" << std::endl;
-                    this->init_ser();
-                    auto it = robot_params.CANboards.begin();
-                    for (size_t i = 1; i <= CANboard_num; i++, it++)
+                    try
                     {
-                        CANboards.push_back(canboard(i, &ser, it->second, canport_error_output_flag));
-                    }
+                        this->init_ser();
+                        auto it = robot_params.CANboards.begin();
+                        for (size_t i = 1; i <= CANboard_num; i++, it++)
+                        {
+                            CANboards.push_back(canboard(i, &ser, it->second, canport_error_output_flag));
+                        }
 
-                    for (canboard &cb : CANboards)
-                    {
-                        cb.push_CANport(&CANPorts);
+                        for (canboard &cb : CANboards)
+                        {
+                            cb.push_CANport(&CANPorts);
+                        }
+                        for (canport *cp : CANPorts)
+                        {
+                            // std::thread(&canport::send, &cp);
+                            cp->puch_motor(&Motors);
+                        }
+                        start_serial_receive_threads();
+                        set_port_motor_num(); // 设置通道上挂载的电机数，并获取主控板固件版本号
+                        check_motor_connection_version();  // 检测电机连接是否正常
+                        error_run_state = error_check;
+                        std::cerr << "\033[1;31mreconnect end\033[0m" << std::endl;
                     }
-                    for (canport *cp : CANPorts)
+                    catch (const std::exception &e)
                     {
-                        // std::thread(&canport::send, &cp);
-                        cp->puch_motor(&Motors);
+                        std::cerr << "\033[1;31mReconnect failed: " << e.what() << "\033[0m" << std::endl;
+                        error_run_state = error_wait_dev;
                     }
-                    set_port_motor_num(); // 设置通道上挂载的电机数，并获取主控板固件版本号
-                    check_motor_connection_version();  // 检测电机连接是否正常
-                    error_run_state = error_check;
-                    std::cerr << "\033[1;31mreconnect end\033[0m" << std::endl;
                 }
                 break;
                 default:

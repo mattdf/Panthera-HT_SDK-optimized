@@ -7,12 +7,13 @@
 #include "motor.hpp"
 #include <unordered_set>
 #include <map>
+#include <atomic>
 
 class serial_driver
 {
 private:
     serial::Serial _ser;
-    bool init_flag;
+    std::atomic_bool init_flag{false};
     std::map<int, motor *> Map_Motors_p;
     uint16_t *p_port_version = NULL;
     std::unordered_set<int> *p_motor_id = NULL;
@@ -37,6 +38,7 @@ public:
     serial_driver(const serial_driver &) = delete;
     serial_driver &operator=(const serial_driver &) = delete;
     bool is_serial_error(void);
+    bool is_open(void);
     void set_run_flag(bool flag);
     bool get_run_flag(void);
     void close(void);

@@ -1,10 +1,35 @@
 #include "serial_driver.hpp"
 #include <iostream>
+#include <algorithm>
+
+namespace
+{
+    bool read_exact(serial::Serial &ser, uint8_t *buffer, size_t len)
+    {
+        size_t offset = 0;
+        while (offset < len)
+        {
+            const size_t n = ser.read(buffer + offset, len - offset);
+            if (n == 0)
+            {
+                return false;
+            }
+            offset += n;
+        }
+        return true;
+    }
+}
 
 serial_driver::serial_driver(std::string *port, uint32_t baudrate, bool _canport_error_output_flag): canport_error_output_flag(_canport_error_output_flag)
 {
     init_flag = false;
     error_flag = false;
+    if (port == nullptr || port->empty())
+    {
+        std::cerr << "\033[1;31mMotor serial port is empty\033[0m" << std::endl;
+        error_flag = true;
+        return;
+    }
     _ser.setPort(*port); // 设置打开的串口名称
     _ser.setBaudrate(baudrate);
     serial::Timeout to = serial::Timeout::simpleTimeout(1000); // 创建timeout
@@ -27,8 +52,9 @@ serial_driver::serial_driver(std::string *port, uint32_t baudrate, bool _canport
     }
     else
     {
+        error_flag = true;
+        init_flag = false;
     }
-    init_flag = true;
 }
 
 
@@ -49,23 +75,58 @@ void serial_driver::recv_1for6_42()
     cdc_tr_message_data_s cdc_rx_message_data = {0};
     while (init_flag)
     {
+        if (!_ser.isOpen())
+        {
+            error_flag = true;
+            init_flag = false;
+            break;
+        }
         cdc_tr_message_head_data_s SOF = {0};
         try
         {
-            _ser.read(&(SOF.head), 1); 
+            const size_t head_len = _ser.read(&(SOF.head), 1);
+            if (head_len == 0)
+            {
+                continue;
+            }
             if (SOF.head == 0xF7)      //  head
             {
-                _ser.read(&(SOF.cmd), 4);
+                if (!read_exact(_ser, &(SOF.cmd), 4))
+                {
+                    continue;
+                }
+                if (SOF.len > CDC_TR_MESSAGE_DATA_LEN)
+                {
+                    std::cerr << "\033[1;31mInvalid serial frame length " << SOF.len
+                              << " from " << _ser.getPort() << "\033[0m" << std::endl;
+                    error_flag = true;
+                    init_flag = false;
+                    _ser.close();
+                    break;
+                }
                 if (SOF.crc8 == Get_CRC8_Check_Sum((uint8_t *)&(SOF.cmd), 3, 0xFF)) // cmd_id
                 {
-                    _ser.read((uint8_t *)&CRC16, 2);
-                    _ser.read((uint8_t *)&cdc_rx_message_data, SOF.len);
+                    if (!read_exact(_ser, (uint8_t *)&CRC16, 2) ||
+                        !read_exact(_ser, (uint8_t *)&cdc_rx_message_data, SOF.len))
+                    {
+                        continue;
+                    }
                     if (CRC16 != crc_ccitt(0xFFFF, (const uint8_t *)&cdc_rx_message_data, SOF.len))
                     {
-                        memset(&cdc_rx_message_data, 0, sizeof(cdc_rx_message_data) / sizeof(int));
+                        memset(&cdc_rx_message_data, 0, sizeof(cdc_rx_message_data));
                     }
                     else
                     {
+                        if (p_mode_flag == nullptr || p_motor_id == nullptr || p_port_version == nullptr ||
+                            p_fun_v == nullptr || p_fdcan_state == nullptr)
+                        {
+                            std::cerr << "\033[1;31mSerial receive callback state is not initialized for "
+                                      << _ser.getPort() << "\033[0m" << std::endl;
+                            error_flag = true;
+                            init_flag = false;
+                            _ser.close();
+                            break;
+                        }
                         // printf("cmd %02X  ", SOF.cmd);
                         // for (int i = 0; i < SOF.len; i++)
                         // {
@@ -140,11 +201,12 @@ void serial_driver::recv_1for6_42()
                                 
                                 if (canport_error_output_flag)
                                 {
-                                    if (_p_fdcan_state.fault > FDCAN_STATUS_ERROR_WARNING || _p_fdcan_state.fault == FDCAN_STATUS_UNKNOWN)
+                                    if (!Map_Motors_p.empty() &&
+                                        (_p_fdcan_state.fault > FDCAN_STATUS_ERROR_WARNING || _p_fdcan_state.fault == FDCAN_STATUS_UNKNOWN))
                                     {
                                         ROS_ERROR("canport[%d] flaut = %d, rx = %d, tx = %d", Map_Motors_p.begin()->second->get_motor_belong_canport(), _p_fdcan_state.fault, _p_fdcan_state.rx_err_num, _p_fdcan_state.tx_err_num);
                                     }
-                                    else if (_p_fdcan_state.fault == FDCAN_STATUS_ERROR_WARNING)
+                                    else if (!Map_Motors_p.empty() && _p_fdcan_state.fault == FDCAN_STATUS_ERROR_WARNING)
                                     {
                                         ROS_INFO("\033[1;32mcanport[%d] flaut = %d, rx = %d, tx = %d\033[0m", Map_Motors_p.begin()->second->get_motor_belong_canport(), _p_fdcan_state.fault, _p_fdcan_state.rx_err_num, _p_fdcan_state.tx_err_num);
                                     }
@@ -176,11 +238,12 @@ void serial_driver::recv_1for6_42()
                                 
                                 if (canport_error_output_flag)
                                 {
-                                    if (_p_fdcan_state.fault > FDCAN_STATUS_ERROR_WARNING || _p_fdcan_state.fault == FDCAN_STATUS_UNKNOWN)
+                                    if (!Map_Motors_p.empty() &&
+                                        (_p_fdcan_state.fault > FDCAN_STATUS_ERROR_WARNING || _p_fdcan_state.fault == FDCAN_STATUS_UNKNOWN))
                                     {
                                         ROS_ERROR("canport[%d] flaut = %d, rx = %d, tx = %d", Map_Motors_p.begin()->second->get_motor_belong_canport(), _p_fdcan_state.fault, _p_fdcan_state.rx_err_num, _p_fdcan_state.tx_err_num);
                                     }
-                                    else if (_p_fdcan_state.fault == FDCAN_STATUS_ERROR_WARNING)
+                                    else if (!Map_Motors_p.empty() && _p_fdcan_state.fault == FDCAN_STATUS_ERROR_WARNING)
                                     {
                                         ROS_INFO("\033[1;32mcanport[%d] flaut = %d, rx = %d, tx = %d\033[0m", Map_Motors_p.begin()->second->get_motor_belong_canport(), _p_fdcan_state.fault, _p_fdcan_state.rx_err_num, _p_fdcan_state.tx_err_num);
                                     }
@@ -228,7 +291,11 @@ void serial_driver::recv_1for6_42()
         catch(const std::exception& e)
         {
             std::cerr << "\033[1;31m" << e.what() << "\033[0m" << '\n';
-            _ser.close();
+            init_flag = false;
+            if (_ser.isOpen())
+            {
+                _ser.close();
+            }
             error_flag = true;
             break;
         }
@@ -238,6 +305,11 @@ void serial_driver::recv_1for6_42()
 bool serial_driver::is_serial_error(void)
 {
     return this->error_flag;
+}
+
+bool serial_driver::is_open(void)
+{
+    return _ser.isOpen() && !error_flag;
 }
 
 void serial_driver::set_run_flag(bool flag)
@@ -258,8 +330,9 @@ void serial_driver::close(void)
         if(_ser.isOpen())
         {
             _ser.flush();
+            _ser.close();
         }
-        _ser.close();
+        init_flag = false;
     }
     catch(const std::exception& e)
     {
@@ -287,11 +360,19 @@ void serial_driver::send_2(cdc_tr_message_s *cdc_tr_message)
         {
             _ser.write((const uint8_t *)&cdc_tr_message->head.s.head, cdc_tr_message->head.s.len + sizeof(cdc_tr_message_head_s));
         }
+        else
+        {
+            error_flag = true;
+        }
     }
     catch(const std::exception& e)
     {
         std::cerr << e.what() << '\n';
-        _ser.close();
+        init_flag = false;
+        if (_ser.isOpen())
+        {
+            _ser.close();
+        }
         error_flag = true;
     }
 }

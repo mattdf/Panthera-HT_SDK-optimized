@@ -1,5 +1,6 @@
 #include <panthera/Panthera.hpp>
 #include <hightorque_logger.hpp>
+#include <serial_driver.hpp>
 
 #include <cassert>
 #include <type_traits>
@@ -40,6 +41,12 @@ int main()
 
     hightorque_robot::set_log_level(hightorque_robot::LogLevel::Error);
     assert(hightorque_robot::get_log_level() == hightorque_robot::LogLevel::Error);
+
+    std::string missing_port = "/tmp/panthera_missing_serial_device";
+    serial_driver driver(&missing_port, 921600, false);
+    assert(driver.is_serial_error());
+    assert(!driver.is_open());
+    driver.set_run_flag(false);
 
     return 0;
 }
